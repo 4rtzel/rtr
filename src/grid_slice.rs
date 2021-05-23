@@ -13,14 +13,16 @@ pub struct GridSlice<I> {
     num_line: usize,
 }
 
-impl<I: Iterator<Item=io::Result<String>>> Iterator for GridSlice<I> {
+impl<I: Iterator<Item = io::Result<String>>> Iterator for GridSlice<I> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let line = match self.source {
                 GridSliceSource::Iter(ref mut i) => i.next()?.ok()?,
-                GridSliceSource::SavedLines(ref l) => l.get(self.num_line)?.as_ref().ok()?.to_string(),
+                GridSliceSource::SavedLines(ref l) => {
+                    l.get(self.num_line)?.as_ref().ok()?.to_string()
+                }
             };
             self.num_line += 1;
             if is_inside_range(&self.grid_slice.line, self.num_line as i64 - 1) {
@@ -36,8 +38,12 @@ impl<I: Iterator<Item=io::Result<String>>> Iterator for GridSlice<I> {
     }
 }
 
-pub fn grid_slice_iter<I: Iterator<Item=io::Result<String>>>(mut grid_slice: grid_slice_parser::GridSliceFilter, iter: I) -> GridSlice<I> {
-    let post_process: bool = grid_slice.line.from < 0 || grid_slice.line.to < -1 || grid_slice.line.step < 0;
+pub fn grid_slice_iter<I: Iterator<Item = io::Result<String>>>(
+    mut grid_slice: grid_slice_parser::GridSliceFilter,
+    iter: I,
+) -> GridSlice<I> {
+    let post_process: bool =
+        grid_slice.line.from < 0 || grid_slice.line.to < -1 || grid_slice.line.step < 0;
 
     if post_process {
         let mut lines: Vec<Result<String, std::io::Error>> = iter.collect();
@@ -59,7 +65,10 @@ pub fn grid_slice_iter<I: Iterator<Item=io::Result<String>>>(mut grid_slice: gri
     }
 }
 
-fn normalize_range(range: &grid_slice_parser::GridSliceRange, length: usize) -> grid_slice_parser::GridSliceRange {
+fn normalize_range(
+    range: &grid_slice_parser::GridSliceRange,
+    length: usize,
+) -> grid_slice_parser::GridSliceRange {
     let from = if range.from < 0 {
         (length - (range.from.abs() as usize % length)) as i64
     } else {
@@ -86,16 +95,18 @@ fn normalize_range(range: &grid_slice_parser::GridSliceRange, length: usize) -> 
 }
 
 fn is_inside_range(range: &grid_slice_parser::GridSliceRange, current: i64) -> bool {
-    (current >= range.from) &&
-    (current <= range.to || range.to == -1) &&
-    (((range.from - current) % range.step) == 0)
+    (current >= range.from)
+        && (current <= range.to || range.to == -1)
+        && (((range.from - current) % range.step) == 0)
 }
 
-fn filter_line<'a, I: Iterator<Item=&'a str>>(range: &grid_slice_parser::GridSliceRange, word: I) -> String {
+fn filter_line<'a, I: Iterator<Item = &'a str>>(
+    range: &grid_slice_parser::GridSliceRange,
+    word: I,
+) -> String {
     word.enumerate()
         .filter(|(n, _)| is_inside_range(range, *n as i64))
         .map(|(_, w)| w)
         .collect::<Vec<&str>>()
         .join(" ")
 }
-

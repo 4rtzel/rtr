@@ -1,6 +1,6 @@
 use std::env;
-use std::io::{self, BufRead, BufReader};
 use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 
 mod parser {
     pub mod grid_slice_parser;
@@ -34,7 +34,7 @@ fn main() -> Result<(), &'static str> {
             for line in grid_slice::grid_slice_iter(grid_slice, reader.lines()) {
                 println!("{}", line);
             }
-        },
+        }
         None => {
             let stdin = io::stdin();
             for line in grid_slice::grid_slice_iter(grid_slice, stdin.lock().lines()) {

@@ -11,23 +11,60 @@ pub struct GridSlice<I> {
     num_line: usize,
 }
 
+impl<T> GridSlice<T> {
+    fn slice_fields(&self, fields: Vec<String>) -> Vec<String> {
+        let field_range = normalize_range(&self.grid_slice.field, fields.len());
+        if field_range.step > 0 {
+            self.slice_fields_from_iter(field_range, fields.into_iter())
+        } else {
+            self.slice_fields_from_iter(field_range, fields.into_iter().rev())
+        }
+    }
+
+    fn slice_fields_from_iter<I: Iterator<Item = String>>(
+        &self,
+        field_range: grid_slice_parser::GridSliceRange,
+        it: I,
+    ) -> Vec<String> {
+        it.enumerate()
+            .filter(|(n, _)| is_inside_range(&field_range, *n as i64))
+            .map(|(_, f)| self.slice_chars(f))
+            .collect()
+    }
+
+    fn slice_chars(&self, field: String) -> String {
+        let char_range = normalize_range(&self.grid_slice.character, field.len());
+        if char_range.step > 0 {
+            self.slice_chars_from_iter(char_range, field.chars())
+        } else {
+            self.slice_chars_from_iter(char_range, field.chars().rev())
+        }
+    }
+
+    fn slice_chars_from_iter<I: Iterator<Item = char>>(
+        &self,
+        char_range: grid_slice_parser::GridSliceRange,
+        it: I,
+    ) -> String {
+        it.enumerate()
+            .filter(|(n, _)| is_inside_range(&char_range, *n as i64))
+            .map(|(_, c)| c)
+            .collect()
+    }
+}
+
 impl<I: Iterator<Item = Vec<String>>> Iterator for GridSlice<I> {
     type Item = Vec<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let words: Vec<String> = match self.source {
+            let fields: Vec<String> = match self.source {
                 GridSliceSource::Iter(ref mut i) => i.next()?,
                 GridSliceSource::SavedLines(ref l) => l.get(self.num_line)?.to_vec(),
             };
             self.num_line += 1;
             if is_inside_range(&self.grid_slice.line, self.num_line as i64 - 1) {
-                let field_range = normalize_range(&self.grid_slice.field, words.len());
-                if field_range.step > 0 {
-                    return Some(filter_line(&field_range, words.into_iter()));
-                } else {
-                    return Some(filter_line(&field_range, words.into_iter().rev()));
-                }
+                return Some(self.slice_fields(fields));
             }
         }
     }
@@ -64,13 +101,23 @@ fn normalize_range(
     range: &grid_slice_parser::GridSliceRange,
     length: usize,
 ) -> grid_slice_parser::GridSliceRange {
+    let length = length as i64;
+
     let from = if range.from < 0 {
-        (length - (range.from.abs() as usize % length)) as i64
+        if length < -range.from {
+            length
+        } else {
+            length + range.from
+        }
     } else {
         range.from
     };
     let to = if range.to < 0 {
-        (length - (range.to.abs() as usize % length)) as i64
+        if length < -range.to {
+            0
+        } else {
+            length + range.to
+        }
     } else {
         range.to
     };
@@ -82,8 +129,8 @@ fn normalize_range(
         }
     } else {
         grid_slice_parser::GridSliceRange {
-            from: length as i64 - to - 1,
-            to: length as i64 - from - 1,
+            from: length - to - 1,
+            to: length - from - 1,
             step: range.step,
         }
     }
@@ -93,14 +140,4 @@ fn is_inside_range(range: &grid_slice_parser::GridSliceRange, current: i64) -> b
     (current >= range.from)
         && (current <= range.to || range.to == -1)
         && (((range.from - current) % range.step) == 0)
-}
-
-fn filter_line<I: Iterator<Item = String>>(
-    range: &grid_slice_parser::GridSliceRange,
-    word: I,
-) -> Vec<String> {
-    word.enumerate()
-        .filter(|(n, _)| is_inside_range(range, *n as i64))
-        .map(|(_, w)| w)
-        .collect::<Vec<String>>()
 }

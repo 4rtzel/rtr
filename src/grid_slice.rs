@@ -1,5 +1,3 @@
-use std::io;
-
 use crate::parser::grid_slice_parser;
 
 enum GridSliceSource<I> {

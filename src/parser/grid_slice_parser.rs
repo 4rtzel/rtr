@@ -8,6 +8,7 @@ enum ParsedGridInteger {
 struct ParsedGridIndex {
     line: Option<ParsedGridInteger>,
     field: Option<ParsedGridInteger>,
+    character: Option<ParsedGridInteger>,
 }
 
 /*
@@ -15,9 +16,12 @@ struct ParsedGridIndex {
  * uppercase_line = "L" integer
  * lowercase_field = "f" integer
  * uppercase_field = "F" integer
+ * lowercase_char = "c" integer
+ * uppercase_char = "C" integer
  * line = lowercase_line | uppercase_line
  * field = lowercase_field | uppercase_field
- * grid_index = line [field] | field [line]
+ * char = lowercase_char | uppercase_char
+ * grid_index = line [field] [char] | line [char] [field] | field [line] [char] | field [char] [line] | char [line] [field] | char [field] [line]
  * grid_slice = [grid_index] ':' [grid_index] [':' [grid_index]] | grid_index
  */
 #[derive(Debug, PartialEq)]
@@ -57,49 +61,104 @@ fn parse_separator(it: &mut std::str::Chars) -> bool {
     false
 }
 
-fn parse_line_or_field(it: &mut std::str::Chars, prefix: char) -> Option<i64> {
+fn parse_char_and_int(it: &mut std::str::Chars, prefix: char) -> Option<ParsedGridInteger> {
     let mut peek = it.clone();
     if peek.next()? == prefix {
         if let Some(v) = parse_integer(&mut peek) {
             *it = peek;
-            return Some(v);
+            if prefix.is_lowercase() {
+                return Some(ParsedGridInteger::LowercaseInteger(v));
+            } else {
+                return Some(ParsedGridInteger::UppercaseInteger(v));
+            }
         }
     }
     None
 }
 
 fn parse_line(it: &mut std::str::Chars) -> Option<ParsedGridInteger> {
-    if let Some(lowercase_line) = parse_line_or_field(it, 'l') {
-        Some(ParsedGridInteger::LowercaseInteger(lowercase_line))
-    } else if let Some(uppercase_line) = parse_line_or_field(it, 'L') {
-        Some(ParsedGridInteger::UppercaseInteger(uppercase_line))
-    } else {
-        None
+    match parse_char_and_int(it, 'l') {
+        Some(v) => Some(v),
+        None => parse_char_and_int(it, 'L'),
     }
 }
 
 fn parse_field(it: &mut std::str::Chars) -> Option<ParsedGridInteger> {
-    if let Some(lowercase_field) = parse_line_or_field(it, 'f') {
-        Some(ParsedGridInteger::LowercaseInteger(lowercase_field))
-    } else if let Some(uppercase_field) = parse_line_or_field(it, 'F') {
-        Some(ParsedGridInteger::UppercaseInteger(uppercase_field))
-    } else {
-        None
+    match parse_char_and_int(it, 'f') {
+        Some(v) => Some(v),
+        None => parse_char_and_int(it, 'F'),
+    }
+}
+
+fn parse_character(it: &mut std::str::Chars) -> Option<ParsedGridInteger> {
+    match parse_char_and_int(it, 'c') {
+        Some(v) => Some(v),
+        None => parse_char_and_int(it, 'C'),
     }
 }
 
 fn parse_grid_index(it: &mut std::str::Chars) -> Option<ParsedGridIndex> {
     let mut peek = it.clone();
     let gi: Option<ParsedGridIndex> = if let Some(line) = parse_line(&mut peek) {
-        Some(ParsedGridIndex {
-            line: Some(line),
-            field: parse_field(&mut peek),
-        })
+        if let Some(field) = parse_field(&mut peek) {
+            Some(ParsedGridIndex {
+                line: Some(line),
+                field: Some(field),
+                character: parse_character(&mut peek),
+            })
+        } else if let Some(character) = parse_character(&mut peek) {
+            Some(ParsedGridIndex {
+                line: Some(line),
+                field: parse_field(&mut peek),
+                character: Some(character),
+            })
+        } else {
+            Some(ParsedGridIndex {
+                line: Some(line),
+                field: None,
+                character: None,
+            })
+        }
     } else if let Some(field) = parse_field(&mut peek) {
-        Some(ParsedGridIndex {
-            line: parse_line(&mut peek),
-            field: Some(field),
-        })
+        if let Some(line) = parse_line(&mut peek) {
+            Some(ParsedGridIndex {
+                line: Some(line),
+                field: Some(field),
+                character: parse_character(&mut peek),
+            })
+        } else if let Some(character) = parse_character(&mut peek) {
+            Some(ParsedGridIndex {
+                line: parse_line(&mut peek),
+                field: Some(field),
+                character: Some(character),
+            })
+        } else {
+            Some(ParsedGridIndex {
+                line: None,
+                field: Some(field),
+                character: None,
+            })
+        }
+    } else if let Some(character) = parse_character(&mut peek) {
+        if let Some(line) = parse_line(&mut peek) {
+            Some(ParsedGridIndex {
+                line: Some(line),
+                field: parse_field(&mut peek),
+                character: Some(character),
+            })
+        } else if let Some(field) = parse_field(&mut peek) {
+            Some(ParsedGridIndex {
+                line: parse_line(&mut peek),
+                field: Some(field),
+                character: Some(character),
+            })
+        } else {
+            Some(ParsedGridIndex {
+                line: None,
+                field: None,
+                character: Some(character),
+            })
+        }
     } else {
         None
     };
@@ -116,14 +175,17 @@ fn parse_grid_slice_impl(it: &mut std::str::Chars) -> Option<ParsedGridSlice> {
         from: ParsedGridIndex {
             line: None,
             field: None,
+            character: None,
         },
         to: ParsedGridIndex {
             line: None,
             field: None,
+            character: None,
         },
         step: ParsedGridIndex {
             line: None,
             field: None,
+            character: None,
         },
     };
     if let Some(from_grid_index) = parse_grid_index(&mut peek) {
@@ -162,6 +224,7 @@ pub struct GridSliceRange {
 pub struct GridSliceFilter {
     pub line: GridSliceRange,
     pub field: GridSliceRange,
+    pub character: GridSliceRange,
 }
 
 fn extract_valid_range(
@@ -215,12 +278,13 @@ pub fn parse_grid_slice(input: &String) -> Result<GridSliceFilter, &'static str>
 
     let line_range = extract_valid_range(&pgs.from.line, &pgs.to.line)?;
     let field_range = extract_valid_range(&pgs.from.field, &pgs.to.field)?;
+    let character_range = extract_valid_range(&pgs.from.character, &pgs.to.character)?;
     Ok(GridSliceFilter {
         line: GridSliceRange {
             from: line_range.0.unwrap_or(0),
             to: line_range.1.unwrap_or(-1),
-            step: if let Some(step_line) = pgs.step.line {
-                match step_line {
+            step: if let Some(line_step) = pgs.step.line {
+                match line_step {
                     ParsedGridInteger::LowercaseInteger(i) => i,
                     ParsedGridInteger::UppercaseInteger(_) => {
                         return Err("Step line cannot be 'L'");
@@ -233,11 +297,25 @@ pub fn parse_grid_slice(input: &String) -> Result<GridSliceFilter, &'static str>
         field: GridSliceRange {
             from: field_range.0.unwrap_or(0),
             to: field_range.1.unwrap_or(-1),
-            step: if let Some(step_field) = pgs.step.field {
-                match step_field {
+            step: if let Some(field_step) = pgs.step.field {
+                match field_step {
                     ParsedGridInteger::LowercaseInteger(i) => i,
                     ParsedGridInteger::UppercaseInteger(_) => {
                         return Err("Step field cannot be 'F'");
+                    }
+                }
+            } else {
+                1
+            },
+        },
+        character: GridSliceRange {
+            from: character_range.0.unwrap_or(0),
+            to: character_range.1.unwrap_or(-1),
+            step: if let Some(character_step) = pgs.step.character {
+                match character_step {
+                    ParsedGridInteger::LowercaseInteger(i) => i,
+                    ParsedGridInteger::UppercaseInteger(_) => {
+                        return Err("Step field cannot be 'C'");
                     }
                 }
             } else {
@@ -278,20 +356,25 @@ mod tests {
     }
 
     #[test]
-    fn parse_line_or_field_test() {
-        fn parse_line_or_field_test_helper(
+    fn parse_char_and_int_test() {
+        fn parse_char_and_int_helper(
             input: &str,
             prefix: char,
-            expects: Option<i64>,
+            expects: Option<ParsedGridInteger>,
             next: Option<char>,
         ) {
             let mut it = input.chars();
-            assert_eq!(parse_line_or_field(&mut it, prefix), expects);
+            assert_eq!(parse_char_and_int(&mut it, prefix), expects);
             assert_eq!(it.next(), next);
         }
-        parse_line_or_field_test_helper("l123", 'l', Some(123), None);
-        parse_line_or_field_test_helper("l123", 'f', None, Some('l'));
-        parse_line_or_field_test_helper("lf123", 'l', None, Some('l'));
+        parse_char_and_int_helper(
+            "l123",
+            'l',
+            Some(ParsedGridInteger::LowercaseInteger(123)),
+            None,
+        );
+        parse_char_and_int_helper("l123", 'f', None, Some('l'));
+        parse_char_and_int_helper("lf123", 'l', None, Some('l'));
     }
 
     #[test]
@@ -359,34 +442,36 @@ mod tests {
         fn pi(
             line: Option<ParsedGridInteger>,
             field: Option<ParsedGridInteger>,
+            character: Option<ParsedGridInteger>,
         ) -> ParsedGridIndex {
             ParsedGridIndex {
                 line: line,
                 field: field,
+                character: character,
             }
         }
         parse_test_helper(
             parse_grid_index,
             "F-42abc",
-            Some(pi(None, Some(pu(-42)))),
+            Some(pi(None, Some(pu(-42)), None)),
             Some('a'),
         );
         parse_test_helper(
             parse_grid_index,
             "l1337F-42abc",
-            Some(pi(Some(pl(1337)), Some(pu(-42)))),
+            Some(pi(Some(pl(1337)), Some(pu(-42)), None)),
             Some('a'),
         );
         parse_test_helper(
             parse_grid_index,
             "L42_",
-            Some(pi(Some(pu(42)), None)),
+            Some(pi(Some(pu(42)), None, None)),
             Some('_'),
         );
         parse_test_helper(
             parse_grid_index,
             "l42L43_",
-            Some(pi(Some(pl(42)), None)),
+            Some(pi(Some(pl(42)), None, None)),
             Some('L'),
         );
         parse_test_helper(parse_grid_index, "r42_", None, Some('r'));
@@ -399,10 +484,12 @@ mod tests {
         fn pi(
             line: Option<ParsedGridInteger>,
             field: Option<ParsedGridInteger>,
+            character: Option<ParsedGridInteger>,
         ) -> ParsedGridIndex {
             ParsedGridIndex {
                 line: line,
                 field: field,
+                character: character,
             }
         }
 
@@ -421,16 +508,20 @@ mod tests {
         parse_test_helper(
             parse_grid_slice_impl,
             "l42",
-            Some(ps(pi(Some(pl(42)), None), pi(None, None), pi(None, None))),
+            Some(ps(
+                pi(Some(pl(42)), None, None),
+                pi(None, None, None),
+                pi(None, None, None),
+            )),
             None,
         );
         parse_test_helper(
             parse_grid_slice_impl,
             "l42F0",
             Some(ps(
-                pi(Some(pl(42)), Some(pu(0))),
-                pi(None, None),
-                pi(None, None),
+                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(None, None, None),
+                pi(None, None, None),
             )),
             None,
         );
@@ -438,9 +529,9 @@ mod tests {
             parse_grid_slice_impl,
             "l42F0:",
             Some(ps(
-                pi(Some(pl(42)), Some(pu(0))),
-                pi(None, None),
-                pi(None, None),
+                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(None, None, None),
+                pi(None, None, None),
             )),
             None,
         );
@@ -448,9 +539,9 @@ mod tests {
             parse_grid_slice_impl,
             "l42F0::",
             Some(ps(
-                pi(Some(pl(42)), Some(pu(0))),
-                pi(None, None),
-                pi(None, None),
+                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(None, None, None),
+                pi(None, None, None),
             )),
             None,
         );
@@ -458,9 +549,9 @@ mod tests {
             parse_grid_slice_impl,
             "l42F0:::",
             Some(ps(
-                pi(Some(pl(42)), Some(pu(0))),
-                pi(None, None),
-                pi(None, None),
+                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(None, None, None),
+                pi(None, None, None),
             )),
             Some(':'),
         );
@@ -468,9 +559,9 @@ mod tests {
             parse_grid_slice_impl,
             ":l42F0",
             Some(ps(
-                pi(None, None),
-                pi(Some(pl(42)), Some(pu(0))),
-                pi(None, None),
+                pi(None, None, None),
+                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(None, None, None),
             )),
             None,
         );
@@ -478,9 +569,9 @@ mod tests {
             parse_grid_slice_impl,
             ":l42F0:",
             Some(ps(
-                pi(None, None),
-                pi(Some(pl(42)), Some(pu(0))),
-                pi(None, None),
+                pi(None, None, None),
+                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(None, None, None),
             )),
             None,
         );
@@ -488,9 +579,9 @@ mod tests {
             parse_grid_slice_impl,
             "::l2F-1a",
             Some(ps(
-                pi(None, None),
-                pi(None, None),
-                pi(Some(pl(2)), Some(pu(-1))),
+                pi(None, None, None),
+                pi(None, None, None),
+                pi(Some(pl(2)), Some(pu(-1)), None),
             )),
             Some('a'),
         );

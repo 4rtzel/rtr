@@ -1,18 +1,18 @@
 # rtr
-```rtr``` is a command-line tool for text processing.
+```rtr``` is a command-line tool for text processing based on Python-like slice syntax.
 
 ## Usage
 ```bash
-rtr program [file]
+rtr slice [file]
 ```
-```program``` is a mandatory argument that specifies a program that will be used for text processing.
+```slice``` is a mandatory argument that specifies a slice that will be used for text processing.
 
 ```file``` is an optional argument that specifies a filename to read the input from. If it's omitted then the input will be read from ```stdin```.
 
 ## Features
 ### GridSlice
-Provides a way to perform text filtering and transformation based on a simple python-like grid indexing.
-All the text could be treated like a **grid** where each line represents a row and each word in the line represents a column. For example this text:
+Provides a way to perform text filtering and transformation based on a simple Python-like slice indexing.
+All the text could be treated like a **three dimensional array** where: each line represents a row (1D), each word in the line represents a column (2D), and each character in the word represents a depth (3D). For example this text:
 ```bash
 -rw-r--r-- 1 4rtzel 4rtzel  134 May  6 11:24 Cargo.lock
 -rw-r--r-- 1 4rtzel 4rtzel  212 May  6 11:24 Cargo.toml
@@ -35,17 +35,23 @@ could be presented in the following grid:
 | 5 | drwxr-xr-x | 3 | 4rtzel | 4rtzel | 4.0K | May |  6 | 11:24 | src
 | 6 | drwxr-xr-x | 3 | 4rtzel | 4rtzel | 4.0K | Apr | 29 | 16:41 | target
 
-We then could use a python-like indexing to extract the text that we want. The indexing syntax looks like that:
+and each cell will have an additional dimensional for characters.
+
+
+We then could use a Python-like slice indexing to extract the text that we want. The indexing syntax looks like that:
 ```bash
-l<line-from>f<field-from>:l<line-to>f<field-to>:l<line-step>f<field-step>
+l<line-from>f<field-from>c<char-from>:l<line-to>f<field-to>c<char-to>:l<line-step>f<field-step>c<char-step>
 ```
 
 * ```l<line-from>``` -- first line to extract text from (e.g. ```l20``` will extract lines from line 20 onward).
-* ```f<field-from>``` -- first field (aka word) to extract text from (e.g. ```f3``` will extract words from word 3 onward).
-* ```l<line-to>``` -- last line to extract (e.g. ```l30``` will extract all lines before line 31).
-* ```f<field-to>``` -- last field (aka word) to extract (e.g. ```f7``` will extract all words before word 8).
+* ```f<field-from>``` -- first field (aka word) to extract text from for each line (e.g. ```f3``` will extract words from word 3 onward).
+* ```c<char-from>``` -- first character to extract text from for each field (e.g. ```c0``` will extract characters starting from the first one).
+* ```l<line-to>``` -- last line to extract text from (e.g. ```l30``` will extract all lines before line 31th).
+* ```f<field-to>``` -- last field (aka word) to extract text from for each line (e.g. ```f7``` will extract all fields before word 8th).
+* ```c<char-to>``` -- last character to extract text from for each field (e.g. ```c3``` will extract all characters before word 4th).
 * ```l<line-step>``` -- step to use for line extraction (e.g. ```l2``` will extract every second line).
 * ```f<field-step>``` -- step to use for field (aka word) extraction (e.g. ```f3``` will extract every third word).
+* ```c<char-step>``` -- step to use for character extraction (e.g. ```c2``` will extract every second character).
 
 ```from``` and ```to``` could have negative values. In that case, the actual number will be calculated by subtracting this value from the input's length 
 (e.g. ```l-5``` means the fifth line from the end).
@@ -57,19 +63,20 @@ l<line-from>f<field-from>:l<line-to>f<field-to>:l<line-step>f<field-step>
 All these indexes have default values and thus could be omitted. The default values are the following:
 
 ```bash
-l0f0:l-1f-1:l1f1
+l0f0c0:l-1f-1c-1:l1f1c1
 ```
 
 or if we put it into words:
 
 Extract lines starting from line 0 (```l0```) till the last line (```l-1```) with the step 1 (```l1```).
 For all these lines extract words starting from word 0 (```f0```) till the last word (```f-1```) with the step 1 (```f1```).
+For all these words extract characters starting from character 0 (```c0```) till the last character (```c-1```) with the step 1 (```c1```).
 
 ```from``` and ```to``` values also have a shortcut when you want to specify the same value for both of them.
 For example, if you want to extract only the fifth word from each line you'd write ```f5:f5```.
 To avoid repeating yourself you could use a capital ```F``` to assign the same value for ```from``` and ```to```: ```F5```.
 
-Note that it's not allowed to use lowercase ```l/f``` with uppercase ```L/F``` in a single range because it would be ambiguous.
+Note that it's not allowed to use lowercase ```l/f/c``` with uppercase ```L/F/C``` in a single range because it would be ambiguous.
 
 ### Examples
 We'll be using the following input for all examples belove:
@@ -198,4 +205,23 @@ $ ll /proc | tail -20 | rtr l-3::f-1
 vmallocinfo 12:54 6 May 0 root root 1 -r--------
 vmstat 12:54 6 May 0 root root 1 -r--r--r--
 zoneinfo 12:54 6 May 0 root root 1 -r--r--r--
+```
+
+Reverse all characters in each word in line 1:
+```bash
+$ ll /proc | tail -20 | rtr L0::c-1
+x-rx-rx-rd 5 toor toor 0 yaM 6 45:21 erusserp
+```
+
+Reverse the whole line:
+```bash
+$ ll /proc | tail -20 | rtr L0::f-1c-1
+erusserp 45:21 6 yaM 0 toor toor 5 x-rx-rx-rd
+```
+
+Print only the first character in each word for the last line:
+
+```bash
+$ ll /proc | tail -20 | rtr L-1C0
+- 1 r r 0 M 6 1 z
 ```

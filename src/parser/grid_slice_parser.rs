@@ -12,6 +12,7 @@ struct ParsedGridIndex {
 }
 
 /*
+ * exclude = "!"
  * lowercase_line = "l" integer
  * uppercase_line = "L" integer
  * lowercase_field = "f" integer
@@ -22,13 +23,23 @@ struct ParsedGridIndex {
  * field = lowercase_field | uppercase_field
  * char = lowercase_char | uppercase_char
  * grid_index = line [field] [char] | line [char] [field] | field [line] [char] | field [char] [line] | char [line] [field] | char [field] [line]
- * grid_slice = [grid_index] ':' [grid_index] [':' [grid_index]] | grid_index
+ * grid_slice = [exclude] [grid_index] ':' [grid_index] [':' [grid_index]] | grid_index
  */
 #[derive(Debug, PartialEq)]
 struct ParsedGridSlice {
     from: ParsedGridIndex,
     to: ParsedGridIndex,
     step: ParsedGridIndex,
+    exclude: bool,
+}
+
+fn parse_exclude(it: &mut std::str::Chars) -> bool {
+    let mut peek = it.clone();
+    if peek.next() == Some('!') {
+        *it = peek;
+        return true;
+    }
+    false
 }
 
 fn parse_integer(it: &mut std::str::Chars) -> Option<i64> {
@@ -187,7 +198,11 @@ fn parse_grid_slice_impl(it: &mut std::str::Chars) -> Option<ParsedGridSlice> {
             field: None,
             character: None,
         },
+        exclude: false,
     };
+    if parse_exclude(&mut peek) {
+        gs.exclude = true;
+    }
     if let Some(from_grid_index) = parse_grid_index(&mut peek) {
         gs.from = from_grid_index;
     }
@@ -225,6 +240,7 @@ pub struct GridSliceFilter {
     pub line: GridSliceRange,
     pub field: GridSliceRange,
     pub character: GridSliceRange,
+    pub exclude: bool,
 }
 
 fn extract_valid_range(
@@ -322,6 +338,7 @@ pub fn parse_grid_slice(input: &String) -> Result<GridSliceFilter, &'static str>
                 1
             },
         },
+        exclude: pgs.exclude,
     })
 }
 

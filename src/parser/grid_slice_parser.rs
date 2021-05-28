@@ -1,14 +1,36 @@
 #[derive(Debug, PartialEq)]
-enum ParsedGridInteger {
+enum SliceEndpointInteger {
     LowercaseInteger(i64),
     UppercaseInteger(i64),
 }
 
 #[derive(Debug, PartialEq)]
-struct ParsedGridIndex {
-    line: Option<ParsedGridInteger>,
-    field: Option<ParsedGridInteger>,
-    character: Option<ParsedGridInteger>,
+struct SliceEndpoint {
+    int: SliceEndpointInteger,
+    exclude: bool,
+}
+
+impl SliceEndpoint {
+    fn new(int: SliceEndpointInteger, exclude: bool) -> Self {
+        SliceEndpoint {
+            int: int,
+            exclude: exclude,
+        }
+    }
+
+    fn from_lower(int: i64, exclude: bool) -> Self {
+        SliceEndpoint::new(SliceEndpointInteger::LowercaseInteger(int), exclude)
+    }
+    fn from_upper(int: i64, exclude: bool) -> Self {
+        SliceEndpoint::new(SliceEndpointInteger::UppercaseInteger(int), exclude)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct SliceIndex {
+    line: Option<SliceEndpoint>,
+    field: Option<SliceEndpoint>,
+    character: Option<SliceEndpoint>,
 }
 
 /*
@@ -19,18 +41,17 @@ struct ParsedGridIndex {
  * uppercase_field = "F" integer
  * lowercase_char = "c" integer
  * uppercase_char = "C" integer
- * line = lowercase_line | uppercase_line
- * field = lowercase_field | uppercase_field
- * char = lowercase_char | uppercase_char
+ * line = [exclude] lowercase_line | uppercase_line
+ * field = [exclude] lowercase_field | uppercase_field
+ * char = [exclude] lowercase_char | uppercase_char
  * grid_index = line [field] [char] | line [char] [field] | field [line] [char] | field [char] [line] | char [line] [field] | char [field] [line]
- * grid_slice = [exclude] [grid_index] ':' [grid_index] [':' [grid_index]] | grid_index
+ * grid_slice = [grid_index] ':' [grid_index] [':' [grid_index]] | grid_index
  */
 #[derive(Debug, PartialEq)]
-struct ParsedGridSlice {
-    from: ParsedGridIndex,
-    to: ParsedGridIndex,
-    step: ParsedGridIndex,
-    exclude: bool,
+struct Slice {
+    from: SliceIndex,
+    to: SliceIndex,
+    step: SliceIndex,
 }
 
 fn parse_exclude(it: &mut std::str::Chars) -> bool {
@@ -72,59 +93,60 @@ fn parse_separator(it: &mut std::str::Chars) -> bool {
     false
 }
 
-fn parse_char_and_int(it: &mut std::str::Chars, prefix: char) -> Option<ParsedGridInteger> {
+fn parse_endpoint(it: &mut std::str::Chars, prefix: char) -> Option<SliceEndpoint> {
     let mut peek = it.clone();
+    let exclude = parse_exclude(&mut peek);
     if peek.next()? == prefix {
         if let Some(v) = parse_integer(&mut peek) {
             *it = peek;
             if prefix.is_lowercase() {
-                return Some(ParsedGridInteger::LowercaseInteger(v));
+                return Some(SliceEndpoint::from_lower(v, exclude));
             } else {
-                return Some(ParsedGridInteger::UppercaseInteger(v));
+                return Some(SliceEndpoint::from_upper(v, exclude));
             }
         }
     }
     None
 }
 
-fn parse_line(it: &mut std::str::Chars) -> Option<ParsedGridInteger> {
-    match parse_char_and_int(it, 'l') {
+fn parse_line(it: &mut std::str::Chars) -> Option<SliceEndpoint> {
+    match parse_endpoint(it, 'l') {
         Some(v) => Some(v),
-        None => parse_char_and_int(it, 'L'),
+        None => parse_endpoint(it, 'L'),
     }
 }
 
-fn parse_field(it: &mut std::str::Chars) -> Option<ParsedGridInteger> {
-    match parse_char_and_int(it, 'f') {
+fn parse_field(it: &mut std::str::Chars) -> Option<SliceEndpoint> {
+    match parse_endpoint(it, 'f') {
         Some(v) => Some(v),
-        None => parse_char_and_int(it, 'F'),
+        None => parse_endpoint(it, 'F'),
     }
 }
 
-fn parse_char(it: &mut std::str::Chars) -> Option<ParsedGridInteger> {
-    match parse_char_and_int(it, 'c') {
+fn parse_char(it: &mut std::str::Chars) -> Option<SliceEndpoint> {
+    match parse_endpoint(it, 'c') {
         Some(v) => Some(v),
-        None => parse_char_and_int(it, 'C'),
+        None => parse_endpoint(it, 'C'),
     }
 }
 
-fn parse_grid_index(it: &mut std::str::Chars) -> Option<ParsedGridIndex> {
+fn parse_grid_index(it: &mut std::str::Chars) -> Option<SliceIndex> {
     let mut peek = it.clone();
-    let gi: Option<ParsedGridIndex> = if let Some(line) = parse_line(&mut peek) {
+    let gi: Option<SliceIndex> = if let Some(line) = parse_line(&mut peek) {
         if let Some(field) = parse_field(&mut peek) {
-            Some(ParsedGridIndex {
+            Some(SliceIndex {
                 line: Some(line),
                 field: Some(field),
                 character: parse_char(&mut peek),
             })
         } else if let Some(character) = parse_char(&mut peek) {
-            Some(ParsedGridIndex {
+            Some(SliceIndex {
                 line: Some(line),
                 field: parse_field(&mut peek),
                 character: Some(character),
             })
         } else {
-            Some(ParsedGridIndex {
+            Some(SliceIndex {
                 line: Some(line),
                 field: None,
                 character: None,
@@ -132,19 +154,19 @@ fn parse_grid_index(it: &mut std::str::Chars) -> Option<ParsedGridIndex> {
         }
     } else if let Some(field) = parse_field(&mut peek) {
         if let Some(line) = parse_line(&mut peek) {
-            Some(ParsedGridIndex {
+            Some(SliceIndex {
                 line: Some(line),
                 field: Some(field),
                 character: parse_char(&mut peek),
             })
         } else if let Some(character) = parse_char(&mut peek) {
-            Some(ParsedGridIndex {
+            Some(SliceIndex {
                 line: parse_line(&mut peek),
                 field: Some(field),
                 character: Some(character),
             })
         } else {
-            Some(ParsedGridIndex {
+            Some(SliceIndex {
                 line: None,
                 field: Some(field),
                 character: None,
@@ -152,19 +174,19 @@ fn parse_grid_index(it: &mut std::str::Chars) -> Option<ParsedGridIndex> {
         }
     } else if let Some(character) = parse_char(&mut peek) {
         if let Some(line) = parse_line(&mut peek) {
-            Some(ParsedGridIndex {
+            Some(SliceIndex {
                 line: Some(line),
                 field: parse_field(&mut peek),
                 character: Some(character),
             })
         } else if let Some(field) = parse_field(&mut peek) {
-            Some(ParsedGridIndex {
+            Some(SliceIndex {
                 line: parse_line(&mut peek),
                 field: Some(field),
                 character: Some(character),
             })
         } else {
-            Some(ParsedGridIndex {
+            Some(SliceIndex {
                 line: None,
                 field: None,
                 character: Some(character),
@@ -180,29 +202,25 @@ fn parse_grid_index(it: &mut std::str::Chars) -> Option<ParsedGridIndex> {
 }
 
 // grid_slice = [grid_index] ':' [grid_index] [':' [grid_index]] | grid_index
-fn parse_grid_slice_impl(it: &mut std::str::Chars) -> Option<ParsedGridSlice> {
+fn parse_grid_slice_impl(it: &mut std::str::Chars) -> Option<Slice> {
     let mut peek = it.clone();
-    let mut gs = ParsedGridSlice {
-        from: ParsedGridIndex {
+    let mut gs = Slice {
+        from: SliceIndex {
             line: None,
             field: None,
             character: None,
         },
-        to: ParsedGridIndex {
+        to: SliceIndex {
             line: None,
             field: None,
             character: None,
         },
-        step: ParsedGridIndex {
+        step: SliceIndex {
             line: None,
             field: None,
             character: None,
         },
-        exclude: false,
     };
-    if parse_exclude(&mut peek) {
-        gs.exclude = true;
-    }
     if let Some(from_grid_index) = parse_grid_index(&mut peek) {
         gs.from = from_grid_index;
     }
@@ -233,6 +251,7 @@ pub struct GridSliceRange {
     pub from: i64,
     pub to: i64,
     pub step: i64,
+    pub exclude: bool,
 }
 
 #[derive(Debug)]
@@ -240,46 +259,62 @@ pub struct GridSliceFilter {
     pub line: GridSliceRange,
     pub field: GridSliceRange,
     pub character: GridSliceRange,
-    pub exclude: bool,
 }
 
 fn extract_valid_range(
-    from: &Option<ParsedGridInteger>,
-    to: &Option<ParsedGridInteger>,
-) -> Result<(Option<i64>, Option<i64>), &'static str> {
+    from: &Option<SliceEndpoint>,
+    to: &Option<SliceEndpoint>,
+    step: &Option<SliceEndpoint>,
+) -> Result<(Option<i64>, Option<i64>, Option<i64>, bool), &'static str> {
     let mut from_int: Option<i64> = None;
     let mut to_int: Option<i64> = None;
+    let mut step_int: Option<i64> = None;
+    let mut exclude = false;
     if let Some(from) = from {
-        match from {
-            ParsedGridInteger::LowercaseInteger(i) => {
-                from_int = Some(*i);
+        match from.int {
+            SliceEndpointInteger::LowercaseInteger(i) => {
+                from_int = Some(i);
             }
-            ParsedGridInteger::UppercaseInteger(i) => {
-                from_int = Some(*i);
-                to_int = Some(*i);
+            SliceEndpointInteger::UppercaseInteger(i) => {
+                from_int = Some(i);
+                to_int = Some(i);
             }
         }
+        exclude = exclude || from.exclude;
     }
 
     if let Some(to) = to {
-        match to {
-            ParsedGridInteger::LowercaseInteger(i) => {
+        match to.int {
+            SliceEndpointInteger::LowercaseInteger(i) => {
                 if to_int.is_some() {
                     return Err("Ambiguous range specified. 'L'/'F' was used in conjunction with 'l'/'f' for the same range");
                 }
-                to_int = Some(*i);
+                to_int = Some(i);
             }
-            ParsedGridInteger::UppercaseInteger(i) => {
+            SliceEndpointInteger::UppercaseInteger(i) => {
                 if to_int.is_some() || from_int.is_some() {
                     return Err("Ambiguous range specified. 'L'/'F' was used in conjunction with 'l'/'f' for the same range");
                 }
-                from_int = Some(*i);
-                to_int = Some(*i);
+                from_int = Some(i);
+                to_int = Some(i);
             }
         }
+        exclude = exclude || to.exclude;
     }
 
-    Ok((from_int, to_int))
+    if let Some(step) = step {
+        match step.int {
+            SliceEndpointInteger::LowercaseInteger(i) => {
+                step_int = Some(i);
+            }
+            SliceEndpointInteger::UppercaseInteger(_) => {
+                return Err("Step specifier cannot be uppercase");
+            }
+        }
+        exclude = exclude || step.exclude;
+    }
+
+    Ok((from_int, to_int, step_int, exclude))
 }
 
 pub fn parse_grid_slice(input: &String) -> Result<GridSliceFilter, &'static str> {
@@ -292,53 +327,29 @@ pub fn parse_grid_slice(input: &String) -> Result<GridSliceFilter, &'static str>
         return Err("Unable to fully parse the input");
     }
 
-    let line_range = extract_valid_range(&pgs.from.line, &pgs.to.line)?;
-    let field_range = extract_valid_range(&pgs.from.field, &pgs.to.field)?;
-    let character_range = extract_valid_range(&pgs.from.character, &pgs.to.character)?;
+    let line_range = extract_valid_range(&pgs.from.line, &pgs.to.line, &pgs.step.line)?;
+    let field_range = extract_valid_range(&pgs.from.field, &pgs.to.field, &pgs.step.field)?;
+    let character_range =
+        extract_valid_range(&pgs.from.character, &pgs.to.character, &pgs.step.character)?;
     Ok(GridSliceFilter {
         line: GridSliceRange {
             from: line_range.0.unwrap_or(0),
             to: line_range.1.unwrap_or(-1),
-            step: if let Some(line_step) = pgs.step.line {
-                match line_step {
-                    ParsedGridInteger::LowercaseInteger(i) => i,
-                    ParsedGridInteger::UppercaseInteger(_) => {
-                        return Err("Step line cannot be 'L'");
-                    }
-                }
-            } else {
-                1
-            },
+            step: line_range.2.unwrap_or(1),
+            exclude: line_range.3,
         },
         field: GridSliceRange {
             from: field_range.0.unwrap_or(0),
             to: field_range.1.unwrap_or(-1),
-            step: if let Some(field_step) = pgs.step.field {
-                match field_step {
-                    ParsedGridInteger::LowercaseInteger(i) => i,
-                    ParsedGridInteger::UppercaseInteger(_) => {
-                        return Err("Step field cannot be 'F'");
-                    }
-                }
-            } else {
-                1
-            },
+            step: field_range.2.unwrap_or(1),
+            exclude: field_range.3,
         },
         character: GridSliceRange {
             from: character_range.0.unwrap_or(0),
             to: character_range.1.unwrap_or(-1),
-            step: if let Some(character_step) = pgs.step.character {
-                match character_step {
-                    ParsedGridInteger::LowercaseInteger(i) => i,
-                    ParsedGridInteger::UppercaseInteger(_) => {
-                        return Err("Step field cannot be 'C'");
-                    }
-                }
-            } else {
-                1
-            },
+            step: character_range.2.unwrap_or(1),
+            exclude: character_range.3,
         },
-        exclude: pgs.exclude,
     })
 }
 
@@ -377,17 +388,17 @@ mod tests {
         fn parse_char_and_int_helper(
             input: &str,
             prefix: char,
-            expects: Option<ParsedGridInteger>,
+            expects: Option<SliceEndpoint>,
             next: Option<char>,
         ) {
             let mut it = input.chars();
-            assert_eq!(parse_char_and_int(&mut it, prefix), expects);
+            assert_eq!(parse_endpoint(&mut it, prefix), expects);
             assert_eq!(it.next(), next);
         }
         parse_char_and_int_helper(
             "l123",
             'l',
-            Some(ParsedGridInteger::LowercaseInteger(123)),
+            Some(SliceEndpoint::from_lower(123, false)),
             None,
         );
         parse_char_and_int_helper("l123", 'f', None, Some('l'));
@@ -399,26 +410,26 @@ mod tests {
         parse_test_helper(
             parse_line,
             "l123",
-            Some(ParsedGridInteger::LowercaseInteger(123)),
+            Some(SliceEndpoint::from_lower(123, false)),
             None,
         );
         parse_test_helper(
             parse_line,
             "l-123abc",
-            Some(ParsedGridInteger::LowercaseInteger(-123)),
+            Some(SliceEndpoint::from_lower(-123, false)),
             Some('a'),
         );
         parse_test_helper(parse_line, "f-123abc", None, Some('f'));
         parse_test_helper(
             parse_line,
             "L123",
-            Some(ParsedGridInteger::UppercaseInteger(123)),
+            Some(SliceEndpoint::from_upper(123, false)),
             None,
         );
         parse_test_helper(
             parse_line,
             "L-123abc",
-            Some(ParsedGridInteger::UppercaseInteger(-123)),
+            Some(SliceEndpoint::from_upper(-123, false)),
             Some('a'),
         );
     }
@@ -428,26 +439,26 @@ mod tests {
         parse_test_helper(
             parse_field,
             "f123",
-            Some(ParsedGridInteger::LowercaseInteger(123)),
+            Some(SliceEndpoint::from_lower(123, false)),
             None,
         );
         parse_test_helper(
             parse_field,
             "f-123abc",
-            Some(ParsedGridInteger::LowercaseInteger(-123)),
+            Some(SliceEndpoint::from_lower(-123, false)),
             Some('a'),
         );
         parse_test_helper(parse_field, "l-123abc", None, Some('l'));
         parse_test_helper(
             parse_field,
             "F123",
-            Some(ParsedGridInteger::UppercaseInteger(123)),
+            Some(SliceEndpoint::from_upper(123, false)),
             None,
         );
         parse_test_helper(
             parse_field,
             "F-123abc",
-            Some(ParsedGridInteger::UppercaseInteger(-123)),
+            Some(SliceEndpoint::from_upper(-123, false)),
             Some('a'),
         );
     }
@@ -457,44 +468,44 @@ mod tests {
         parse_test_helper(
             parse_char,
             "c1",
-            Some(ParsedGridInteger::LowercaseInteger(1)),
+            Some(SliceEndpoint::from_lower(1, false)),
             None,
         );
         parse_test_helper(
             parse_char,
             "c-2abc",
-            Some(ParsedGridInteger::LowercaseInteger(-2)),
+            Some(SliceEndpoint::from_lower(-2, false)),
             Some('a'),
         );
         parse_test_helper(parse_char, "l-123abc", None, Some('l'));
         parse_test_helper(
             parse_char,
             "C123",
-            Some(ParsedGridInteger::UppercaseInteger(123)),
+            Some(SliceEndpoint::from_upper(123, false)),
             None,
         );
         parse_test_helper(
             parse_char,
             "C-123abc",
-            Some(ParsedGridInteger::UppercaseInteger(-123)),
+            Some(SliceEndpoint::from_upper(-123, false)),
             Some('a'),
         );
     }
 
     #[test]
     fn parse_grid_index_test() {
-        fn pl(value: i64) -> Option<ParsedGridInteger> {
-            Some(ParsedGridInteger::LowercaseInteger(value))
+        fn pl(value: i64) -> Option<SliceEndpoint> {
+            Some(SliceEndpoint::from_lower(value, false))
         }
-        fn pu(value: i64) -> Option<ParsedGridInteger> {
-            Some(ParsedGridInteger::UppercaseInteger(value))
+        fn pu(value: i64) -> Option<SliceEndpoint> {
+            Some(SliceEndpoint::from_upper(value, false))
         }
         fn pi(
-            line: Option<ParsedGridInteger>,
-            field: Option<ParsedGridInteger>,
-            character: Option<ParsedGridInteger>,
-        ) -> Option<ParsedGridIndex> {
-            Some(ParsedGridIndex {
+            line: Option<SliceEndpoint>,
+            field: Option<SliceEndpoint>,
+            character: Option<SliceEndpoint>,
+        ) -> Option<SliceIndex> {
+            Some(SliceIndex {
                 line: line,
                 field: field,
                 character: character,
@@ -534,26 +545,26 @@ mod tests {
 
     #[test]
     fn parse_grid_slice_impl_test() {
-        let pl = ParsedGridInteger::LowercaseInteger;
-        let pu = ParsedGridInteger::UppercaseInteger;
+        fn pl(value: i64) -> Option<SliceEndpoint> {
+            Some(SliceEndpoint::from_lower(value, false))
+        }
+        fn pu(value: i64) -> Option<SliceEndpoint> {
+            Some(SliceEndpoint::from_upper(value, false))
+        }
         fn pi(
-            line: Option<ParsedGridInteger>,
-            field: Option<ParsedGridInteger>,
-            character: Option<ParsedGridInteger>,
-        ) -> ParsedGridIndex {
-            ParsedGridIndex {
+            line: Option<SliceEndpoint>,
+            field: Option<SliceEndpoint>,
+            character: Option<SliceEndpoint>,
+        ) -> SliceIndex {
+            SliceIndex {
                 line: line,
                 field: field,
                 character: character,
             }
         }
 
-        fn ps(
-            from: ParsedGridIndex,
-            to: ParsedGridIndex,
-            step: ParsedGridIndex,
-        ) -> ParsedGridSlice {
-            ParsedGridSlice {
+        fn ps(from: SliceIndex, to: SliceIndex, step: SliceIndex) -> Slice {
+            Slice {
                 from: from,
                 to: to,
                 step: step,
@@ -564,7 +575,7 @@ mod tests {
             parse_grid_slice_impl,
             "l42",
             Some(ps(
-                pi(Some(pl(42)), None, None),
+                pi(pl(42), None, None),
                 pi(None, None, None),
                 pi(None, None, None),
             )),
@@ -574,7 +585,7 @@ mod tests {
             parse_grid_slice_impl,
             "l42F0",
             Some(ps(
-                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(pl(42), pu(0), None),
                 pi(None, None, None),
                 pi(None, None, None),
             )),
@@ -584,7 +595,7 @@ mod tests {
             parse_grid_slice_impl,
             "l42F0:",
             Some(ps(
-                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(pl(42), pu(0), None),
                 pi(None, None, None),
                 pi(None, None, None),
             )),
@@ -594,7 +605,7 @@ mod tests {
             parse_grid_slice_impl,
             "l42F0::",
             Some(ps(
-                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(pl(42), pu(0), None),
                 pi(None, None, None),
                 pi(None, None, None),
             )),
@@ -604,7 +615,7 @@ mod tests {
             parse_grid_slice_impl,
             "l42F0:::",
             Some(ps(
-                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(pl(42), pu(0), None),
                 pi(None, None, None),
                 pi(None, None, None),
             )),
@@ -615,7 +626,7 @@ mod tests {
             ":l42F0",
             Some(ps(
                 pi(None, None, None),
-                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(pl(42), pu(0), None),
                 pi(None, None, None),
             )),
             None,
@@ -625,7 +636,7 @@ mod tests {
             ":l42F0:",
             Some(ps(
                 pi(None, None, None),
-                pi(Some(pl(42)), Some(pu(0)), None),
+                pi(pl(42), pu(0), None),
                 pi(None, None, None),
             )),
             None,
@@ -636,7 +647,7 @@ mod tests {
             Some(ps(
                 pi(None, None, None),
                 pi(None, None, None),
-                pi(Some(pl(2)), Some(pu(-1)), None),
+                pi(pl(2), pu(-1), None),
             )),
             Some('a'),
         );

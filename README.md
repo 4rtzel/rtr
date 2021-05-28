@@ -78,6 +78,10 @@ To avoid repeating yourself you could use a capital ```F``` to assign the same v
 
 Note that it's not allowed to use lowercase ```l/f/c``` with uppercase ```L/F/C``` in a single range because it would be ambiguous.
 
+Additionally, each l/L/f/F/c/C character could be prefixed with "!" to exclude this particular range. The placement of "!" doesn't matter as long as it precedes a range-defined character. So ```!l1:l3``` is the same as ```l1:!l3``` and even ```l1:l3:!l1```.
+
+This might be helpful to filter out the text in the middle of the range. For example, to print only the first and the last line one could use: ```!l1:l-2```.
+
 ### Examples
 We'll be using the following input for all examples belove:
 ```bash
@@ -106,7 +110,7 @@ dr-xr-xr-x  6 root             root                0 May  6 12:54 tty
 
 in the following way:
 ```bash
-ll /proc | tail -20 | rtr <program>
+ll /proc | tail -20 | rtr <slice>
 ```
 ---
 Print all lines from line 15:
@@ -224,4 +228,12 @@ Print only the first character in each word for the last line:
 ```bash
 $ ll /proc | tail -20 | rtr L-1C0
 - 1 r r 0 M 6 1 z
+```
+
+Print only the first and the last word in the last three lines:
+```bash
+$ ll /proc | tail -20 | rtr 'l-3!f1:f-2'
+-r-------- vmallocinfo
+-r--r--r-- vmstat
+-r--r--r-- zoneinfo
 ```

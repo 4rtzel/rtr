@@ -27,7 +27,9 @@ impl<T> GridSlice<T> {
         it: I,
     ) -> Vec<String> {
         it.enumerate()
-            .filter(|(n, _)| is_inside_range(&field_range, *n as i64))
+            .filter(|(n, _)| {
+                self.filter_by_range(&field_range, *n as i64, self.grid_slice.field.exclude)
+            })
             .map(|(_, f)| self.slice_chars(f))
             .collect()
     }
@@ -47,9 +49,24 @@ impl<T> GridSlice<T> {
         it: I,
     ) -> String {
         it.enumerate()
-            .filter(|(n, _)| is_inside_range(&char_range, *n as i64))
+            .filter(|(n, _)| {
+                self.filter_by_range(&char_range, *n as i64, self.grid_slice.character.exclude)
+            })
             .map(|(_, c)| c)
             .collect()
+    }
+
+    fn filter_by_range(
+        &self,
+        range: &grid_slice_parser::GridSliceRange,
+        current: i64,
+        exclude: bool,
+    ) -> bool {
+        if exclude {
+            !is_inside_range(range, current)
+        } else {
+            is_inside_range(range, current)
+        }
     }
 }
 
@@ -63,7 +80,11 @@ impl<I: Iterator<Item = Vec<String>>> Iterator for GridSlice<I> {
                 GridSliceSource::SavedLines(ref l) => l.get(self.num_line)?.to_vec(),
             };
             self.num_line += 1;
-            if is_inside_range(&self.grid_slice.line, self.num_line as i64 - 1) {
+            if self.filter_by_range(
+                &self.grid_slice.line,
+                self.num_line as i64 - 1,
+                self.grid_slice.line.exclude,
+            ) {
                 return Some(self.slice_fields(fields));
             }
         }
@@ -126,12 +147,14 @@ fn normalize_range(
             from: from,
             to: to,
             step: range.step,
+            exclude: range.exclude,
         }
     } else {
         grid_slice_parser::GridSliceRange {
             from: length - to - 1,
             to: length - from - 1,
             step: range.step,
+            exclude: range.exclude,
         }
     }
 }
